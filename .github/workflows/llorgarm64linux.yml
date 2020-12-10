@@ -11,10 +11,6 @@ jobs:
     steps:
       - name: Prepare tools
         run: |
-          mv /bin/tar /bin/tar-real
-          echo '#!/bin/bash' >/bin/tar
-          echo '/bin/tar-real "${@}" --no-same-owner' >>/bin/tar
-          chmod +x /bin/tar
           echo 'deb [arch=amd64] http://repo-dpd-lde.inn.intel.com/lde.v3/debian/UBUNTU.1804.2/ia32e/source bionic main restricted' >> /etc/apt/sources.list
           echo 'i386' >> /var/lib/dpkg/arch
           apt-get update
@@ -32,11 +28,6 @@ jobs:
                         libstdc++-7-dev-armhf-cross
           python3 -m pip install cmake
           apt-get autoclean
-          mkdir -p /home/cross
-          mv /usr/bin/ssh /usr/bin/ssh-real
-          echo '#!/bin/bash' >/usr/bin/ssh
-          echo 'if [ -z "$HOST_USER" ]; then /usr/bin/ssh-real "${@}"; else /usr/bin/ssh-real -l "$HOST_USER" "${@}"; fi' >>/usr/bin/ssh
-          chmod +x /usr/bin/ssh
       - name: Checkout code
         uses: actions/checkout@v1
       - name: Build llorgarm64linux compiler on ubuntu18
