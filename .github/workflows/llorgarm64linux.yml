@@ -8,7 +8,6 @@ jobs:
   build_llorgarm64linux:
     name: Build llorgarm64linux compiler
     runs-on: ubuntu-latest
-    container: ubuntu 18.04
     steps:
       - name: Prepare tools
         run: |
