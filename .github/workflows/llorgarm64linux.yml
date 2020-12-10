@@ -1,10 +1,6 @@
 on:
-  push:
-    paths:
-      - 'clang/**'
-      - 'compiler-rt/**'
-      - 'llvm/**'
-      - 'openmp/**'
+  schedule:
+  - cron: '5 * * * *'
 
 name: Build and upload llorgarm64linux compiler changeset build
 
@@ -12,40 +8,41 @@ jobs:
   build_llorgarm64linux:
     name: Build llorgarm64linux compiler
     runs-on: ubuntu-latest
-    container: centos:7
+    container: ubuntu 18.04
     steps:
-      - name: Prepare CentOS tools
+      - name: Prepare tools
         run: |
-          yum install -y wget
-          wget https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
-          yum install -y --nogpgcheck ./epel-release-latest-*.noarch.rpm
-          yum install -y --nogpgcheck cmake3 make git perl-Data-Dumper centos-release-scl-rh
-          yum install -y --nogpgcheck devtoolset-7-gcc devtoolset-7-binutils devtoolset-7-gcc-c++
-          ln -s /usr/bin/cmake3 /usr/bin/cmake
+          mv /bin/tar /bin/tar-real
+          echo '#!/bin/bash' >/bin/tar
+          echo '/bin/tar-real "${@}" --no-same-owner' >>/bin/tar
+          chmod +x /bin/tar
+          echo 'deb [arch=amd64] http://repo-dpd-lde.inn.intel.com/lde.v3/debian/UBUNTU.1804.2/ia32e/source bionic main restricted' >> /etc/apt/sources.list
+          echo 'i386' >> /var/lib/dpkg/arch
+          apt-get update
+          apt-get -yq install build-essential\
+                        git\
+                        python3-pip\
+                        ninja-build\
+                        g++-7-aarch64-linux-gnu\
+                        g++-7-multilib-arm-linux-gnueabihf\
+                        binutils-arm-linux-gnueabihf\
+                        binutils-multiarch-dev\
+                        libgcc1-armhf-cross\
+                        libsfgcc1-armhf-cross\
+                        libstdc++6-armhf-cross\
+                        libstdc++-7-dev-armhf-cross
+          python3 -m pip install cmake
+          apt-get autoclean
+          mkdir -p /home/cross
+          mv /usr/bin/ssh /usr/bin/ssh-real
+          echo '#!/bin/bash' >/usr/bin/ssh
+          echo 'if [ -z "$HOST_USER" ]; then /usr/bin/ssh-real "${@}"; else /usr/bin/ssh-real -l "$HOST_USER" "${@}"; fi' >>/usr/bin/ssh
+          chmod +x /usr/bin/ssh
       - name: Checkout code
         uses: actions/checkout@v1
-      - name: Unpack cross build tools
+      - name: Build llorgarm64linux compiler on ubuntu18
         run: |
-          mkdir -p /home/cross/sysroot /home/cross/toolchain
-          cat .github/workflows/el77-arm64-cross_ub1410-sysroot.tar.xz.part?? >.github/workflows/el77-arm64-cross_ub1410-sysroot.tar.xz
-          tar xf .github/workflows/el77-arm64-cross_ub1410-sysroot.tar.xz -C /home/cross/sysroot
-          tar xf .github/workflows/el77-arm64-cross_toolchain.tar.xz -C /home/cross/toolchain
-      - name: Build llorgarm64linux compiler on CentOS
-        run: |
-          MY_SYSROOT=/home/cross/sysroot
-          MY_TOOLCHAIN=/home/cross/toolchain
-          ROOT=$(pwd)
-          mkdir build_tools build_cross install
-          git show --name-only --oneline HEAD^2 >install/llvm_changes 2>&1 || true
-          cd build_tools
-          scl enable devtoolset-7 "cmake -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS='clang;compiler-rt;openmp' ../llvm"
-          scl enable devtoolset-7 "make llvm-tblgen clang-tblgen -j$(nproc)"
-          cd ../build_cross
-          PATH=$MY_TOOLCHAIN/bin:$PATH cmake -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS='clang;compiler-rt;openmp' -DLLVM_LINK_LLVM_DYLIB=ON -DCMAKE_CROSSCOMPILING=True -DLLVM_TARGET_ARCH=AArch64 -DLLVM_TARGETS_TO_BUILD=AArch64 -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-unknown-linux-gnu -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_CXX_FLAGS="-march=armv8-a --sysroot=$MY_SYSROOT" -DCOMPILER_RT_BUILD_SANITIZERS=OFF -DLLVM_TABLEGEN=$ROOT/build_tools/bin/llvm-tblgen -DCLANG_TABLEGEN=$ROOT/build_tools/bin/clang-tblgen -DLLVM_BINUTILS_INCDIR=$MY_TOOLCHAIN/lib/gcc/aarch64-linux-gnu/5.5.0/plugin/include -DLLVM_ENABLE_LIBXML2=False -DLLVM_INCLUDE_TESTS=False -DCMAKE_INSTALL_PREFIX=../install ../llvm
-          PATH=$MY_TOOLCHAIN/bin:$PATH make install -j$(nproc)
-          cd ../install
-          tar cfz ../llorgarm64linux.tar.xz *
-          cd ..
+          echo "env set up ok"
       - name: Upload llorgarm64linux build artifacts
         uses: actions/upload-artifact@v1
         with:
