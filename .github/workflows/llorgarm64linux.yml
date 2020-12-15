@@ -32,8 +32,34 @@ jobs:
       - name: Build llorgarm64linux compiler on ubuntu18
         run: |
           echo "env set up ok"
-      - name: Upload llorgarm64linux build artifacts
-        uses: actions/upload-artifact@v1
-        with:
-          name: llorgarm64linux
-          path: llorgarm64linux.tar.xz
+          builds_ws=$(pwd)
+          export MY_LLVM_ROOT=${builds_ws}/llvm
+          function check_rc () {
+              rc=$?
+              if [ $rc != 0 ]; then exit $rc; fi
+          }
+          ### build x86
+          cd $builds_ws
+          test -z $NCPU && NCPU=$(nproc)
+          rm -rf build
+          mkdir build; cd build
+          CC=`which gcc` CXX=`which g++` cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="clang;ompiler-rt;openmp" $MY_LLVM_ROOT/llvm
+          make -j$NCPU llvm-tblgen clang-tblgen SHELL="bash -x"
+          check_rc
+          ### build arm
+          cd $builds_ws
+          rm -rf deploy; mkdir -p deploy/linux_prod
+          rm -rf builds 
+          DEPLOY_WS=`pwd`/deploy/linux_prod
+          mkdir builds; cd builds
+          CC=aarch64-linux-gnu-gcc-7 CXX=aarch64-linux-gnu-g++-7 cmake -G Ninja -DLLVM_ENABLE_PROJECTS="clang;ompiler-rt;openmp" -DLLVM_LINK_LLVM_DYLIB=ON -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="AArch64" -DLLVM_BINUTILS_INCDIR=/usr/include -DCMAKE_INSTALL_PREFIX=$DEPLOY_WS -DLLVM_TABLEGEN=${builds_ws}/build/bin/llvm-tblgen -DCLANG_TABLEGEN=${builds_ws}/build/bin/clang-tblgen -DCMAKE_CROSSCOMPILING=True -DLLVM_TARGET_ARCH=AArch64 -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-unknown-linux-gnu  ${MY_LLVM_ROOT}/llvm 2>&1
+          ninja 2>&1
+          check_rc
+          ninja install
+          check_rc
+          echo "Build finished successfully"
+          mkdir llorgarm64linux_prod
+          cd $builds_ws
+          tar cfz ../llorgarm64linux.tar.xz *
+          cd ..
+
