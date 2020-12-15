@@ -1,6 +1,6 @@
 on:
   schedule:
-  - cron: '0 19 * * 4'
+  - cron: '0,5,10 * * * *'
 
 name: Build and upload llorgarm64linux compiler changeset build
 
@@ -8,6 +8,7 @@ jobs:
   build_llorgarm64linux:
     name: Build llorgarm64linux compiler
     runs-on: ubuntu-latest
+    container: ubuntu:18.04
     steps:
       - name: Prepare tools
         run: |
