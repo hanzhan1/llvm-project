@@ -1,6 +1,6 @@
 on:
   schedule:
-  - cron: '0,5,10 * * * *'
+  - cron: '0,5,10,20,25,30,35,40 * * * *'
 
 name: Build and upload llorgarm64linux compiler changeset build
 
