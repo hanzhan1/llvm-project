@@ -1,4 +1,5 @@
 on:
+  workflow_dispatch:
   schedule:
   - cron: '0,5,10,15,20,25,30,35,40,45,50,55 * * * *'
 
@@ -33,6 +34,9 @@ jobs:
         run: |
           echo "env set up ok"
           builds_ws=`pwd`
+          echo $builds_ws
+          ls
+          pwd
           export MY_LLVM_ROOT=${builds_ws}/llvm
           check_rc () {
               rc=$?
