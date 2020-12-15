@@ -34,7 +34,7 @@ jobs:
           echo "env set up ok"
           builds_ws=`pwd`
           export MY_LLVM_ROOT=${builds_ws}/llvm
-          function check_rc () {
+          check_rc () {
               rc=$?
               if [ $rc != 0 ]; then exit $rc; fi
           }
