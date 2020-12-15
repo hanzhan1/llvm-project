@@ -32,7 +32,7 @@ jobs:
       - name: Build llorgarm64linux compiler on ubuntu18
         run: |
           echo "env set up ok"
-          builds_ws=$(pwd)
+          builds_ws=`pwd`
           export MY_LLVM_ROOT=${builds_ws}/llvm
           function check_rc () {
               rc=$?
