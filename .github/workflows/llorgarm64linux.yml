@@ -67,4 +67,8 @@ jobs:
           cd $builds_ws
           tar cfz ../llorgarm64linux.tar.xz *
           cd ..
-
+      - name: Upload llorgarm64linux build artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: llorgarm64linux
+          path: llorgarm64linux.tar.xz
