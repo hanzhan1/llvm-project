@@ -58,9 +58,9 @@ jobs:
           echo "Build finished successfully"
           mkdir llorgarm64linux_prod
           cd $DEPLOY_WS && rm -f sum.txt && find . -type f | xargs md5sum --binary > ../sum_Release.txt && mv ../sum_Release.txt ./sum.txt
-          cd $builds_ws
-          tar cfz ../llorgarm64linux.tar.xz *
-          cd ..
+          cd $DEPLOY_WS
+          tar cfz ../../llorgarm64linux.tar.xz *
+          cd ../../
       - name: Upload llorgarm64linux build artifacts
         uses: actions/upload-artifact@v1
         with:
