@@ -1,7 +1,5 @@
 on:
   workflow_dispatch:
-  schedule:
-  - cron: '0 * * * *'
 
 name: Build and upload llorgarm64linux compiler changeset build
 
