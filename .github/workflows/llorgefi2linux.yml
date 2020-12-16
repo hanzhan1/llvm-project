@@ -31,7 +31,7 @@ jobs:
           cd build
           scl enable devtoolset-7 "cmake -G 'Unix Makefiles' -DLLVM_ENABLE_PROJECTS='clang;compiler-rt;openmp' -DCMAKE_INSTALL_PREFIX=../install -DLLVM_LINK_LLVM_DYLIB=ON -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD='X86' -DLLVM_BINUTILS_INCDIR=/opt/rh/devtoolset-7/root/usr/include ../llvm"
           scl enable devtoolset-7 "make install -j$(nproc)"
-          cd ../install
+          cd ../install && rm -f sum.txt && find . -type f | xargs md5sum --binary > ../sum_Release.txt && mv ../sum_Release.txt ./sum.txt
           tar cfz ../llorgefi2linux.tar.xz *
           cd ..
       - name: Upload llorgefi2linux build artifacts
