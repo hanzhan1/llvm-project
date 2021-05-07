@@ -512,7 +512,8 @@ public:
   const SCEV *getConstant(ConstantInt *V);
   const SCEV *getConstant(const APInt &Val);
   const SCEV *getConstant(Type *Ty, uint64_t V, bool isSigned = false);
-  const SCEV *getPtrToIntExpr(const SCEV *Op, Type *Ty, unsigned Depth = 0);
+  const SCEV *getLosslessPtrToIntExpr(const SCEV *Op, unsigned Depth = 0);
+  const SCEV *getPtrToIntExpr(const SCEV *Op, Type *Ty);
   const SCEV *getTruncateExpr(const SCEV *Op, Type *Ty, unsigned Depth = 0);
   const SCEV *getZeroExtendExpr(const SCEV *Op, Type *Ty, unsigned Depth = 0);
   const SCEV *getSignExtendExpr(const SCEV *Op, Type *Ty, unsigned Depth = 0);
@@ -575,7 +576,6 @@ public:
   const SCEV *getGEPExpr(GEPOperator *GEP,
                          const SmallVectorImpl<const SCEV *> &IndexExprs);
   const SCEV *getAbsExpr(const SCEV *Op, bool IsNSW);
-  const SCEV *getSignumExpr(const SCEV *Op);
   const SCEV *getMinMaxExpr(SCEVTypes Kind,
                             SmallVectorImpl<const SCEV *> &Operands);
   const SCEV *getSMaxExpr(const SCEV *LHS, const SCEV *RHS);
@@ -938,10 +938,23 @@ public:
   bool isKnownPredicate(ICmpInst::Predicate Pred, const SCEV *LHS,
                         const SCEV *RHS);
 
+  /// Check whether the condition described by Pred, LHS, and RHS is true or
+  /// false. If we know it, return the evaluation of this condition. If neither
+  /// is proved, return None.
+  Optional<bool> evaluatePredicate(ICmpInst::Predicate Pred, const SCEV *LHS,
+                                   const SCEV *RHS);
+
   /// Test if the given expression is known to satisfy the condition described
   /// by Pred, LHS, and RHS in the given Context.
   bool isKnownPredicateAt(ICmpInst::Predicate Pred, const SCEV *LHS,
                         const SCEV *RHS, const Instruction *Context);
+
+  /// Check whether the condition described by Pred, LHS, and RHS is true or
+  /// false in the given \p Context. If we know it, return the evaluation of
+  /// this condition. If neither is proved, return None.
+  Optional<bool> evaluatePredicateAt(ICmpInst::Predicate Pred, const SCEV *LHS,
+                                     const SCEV *RHS,
+                                     const Instruction *Context);
 
   /// Test if the condition described by Pred, LHS, RHS is known to be true on
   /// every iteration of the loop of the recurrency LHS.
@@ -1163,10 +1176,22 @@ public:
       const SCEV *S, const Loop *L,
       SmallPtrSetImpl<const SCEVPredicate *> &Preds);
 
+  /// Compute \p LHS - \p RHS and returns the result as an APInt if it is a
+  /// constant, and None if it isn't.
+  ///
+  /// This is intended to be a cheaper version of getMinusSCEV.  We can be
+  /// frugal here since we just bail out of actually constructing and
+  /// canonicalizing an expression in the cases where the result isn't going
+  /// to be a constant.
+  Optional<APInt> computeConstantDifference(const SCEV *LHS, const SCEV *RHS);
+
   /// Update no-wrap flags of an AddRec. This may drop the cached info about
   /// this AddRec (such as range info) in case if new flags may potentially
   /// sharpen it.
   void setNoWrapFlags(SCEVAddRecExpr *AddRec, SCEV::NoWrapFlags Flags);
+
+  /// Try to apply information from loop guards for \p L to \p Expr.
+  const SCEV *applyLoopGuards(const SCEV *Expr, const Loop *L);
 
 private:
   /// A CallbackVH to arrange for ScalarEvolution to be notified whenever a
@@ -1436,9 +1461,6 @@ private:
     /// Return true if any backedge taken count expressions refer to the given
     /// subexpression.
     bool hasOperand(const SCEV *S, ScalarEvolution *SE) const;
-
-    /// Invalidate this result and free associated memory.
-    void clear();
   };
 
   /// Cache the backedge-taken count of the loops for this function as they
@@ -1548,6 +1570,12 @@ private:
   /// Helper called by \c getRange.
   ConstantRange getRangeViaFactoring(const SCEV *Start, const SCEV *Stop,
                                      const SCEV *MaxBECount, unsigned BitWidth);
+
+  /// If the unknown expression U corresponds to a simple recurrence, return
+  /// a constant range which represents the entire recurrence.  Note that
+  /// *add* recurrences with loop invariant steps aren't represented by
+  /// SCEVUnknowns and thus don't use this mechanism.
+  ConstantRange getRangeForUnknownRecurrence(const SCEVUnknown *U);
 
   /// We know that there is no SCEV for the specified value.  Analyze the
   /// expression.
@@ -1667,10 +1695,7 @@ private:
   computeExitLimitFromCondFromBinOp(ExitLimitCacheTy &Cache, const Loop *L,
                                     Value *ExitCond, bool ExitIfTrue,
                                     bool ControlsExit, bool AllowPredicates);
-  ExitLimit computeExitLimitFromCondFromBinOpHelper(
-      ExitLimitCacheTy &Cache, const Loop *L, BinaryOperator *BO,
-      bool EitherMayExit, bool ExitIfTrue, bool ControlsExit,
-      bool AllowPredicates, const Constant *NeutralElement);
+
   /// Compute the number of times the backedge of the specified loop will
   /// execute if its exit condition were a conditional branch of the ICmpInst
   /// ExitCond and ExitIfTrue. If AllowPredicates is set, this call will try
@@ -1884,15 +1909,6 @@ private:
   bool splitBinaryAdd(const SCEV *Expr, const SCEV *&L, const SCEV *&R,
                       SCEV::NoWrapFlags &Flags);
 
-  /// Compute \p LHS - \p RHS and returns the result as an APInt if it is a
-  /// constant, and None if it isn't.
-  ///
-  /// This is intended to be a cheaper version of getMinusSCEV.  We can be
-  /// frugal here since we just bail out of actually constructing and
-  /// canonicalizing an expression in the cases where the result isn't going
-  /// to be a constant.
-  Optional<APInt> computeConstantDifference(const SCEV *LHS, const SCEV *RHS);
-
   /// Drop memoized information computed for S.
   void forgetMemoizedResults(const SCEV *S);
 
@@ -2023,9 +2039,6 @@ private:
   /// Try to match the pattern generated by getURemExpr(A, B). If successful,
   /// Assign A and B to LHS and RHS, respectively.
   bool matchURem(const SCEV *Expr, const SCEV *&LHS, const SCEV *&RHS);
-
-  /// Try to apply information from loop guards for \p L to \p Expr.
-  const SCEV *applyLoopGuards(const SCEV *Expr, const Loop *L);
 
   /// Look for a SCEV expression with type `SCEVType` and operands `Ops` in
   /// `UniqueSCEVs`.

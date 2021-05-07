@@ -74,6 +74,7 @@ class MCSymbol;
 class OptimizationRemarkEmitter;
 class ProfileSummaryInfo;
 class SDDbgValue;
+class SDDbgOperand;
 class SDDbgLabel;
 class SelectionDAG;
 class SelectionDAGTargetInfo;
@@ -159,17 +160,9 @@ public:
   SDDbgInfo(const SDDbgInfo &) = delete;
   SDDbgInfo &operator=(const SDDbgInfo &) = delete;
 
-  void add(SDDbgValue *V, const SDNode *Node, bool isParameter) {
-    if (isParameter) {
-      ByvalParmDbgValues.push_back(V);
-    } else     DbgValues.push_back(V);
-    if (Node)
-      DbgValMap[Node].push_back(V);
-  }
+  void add(SDDbgValue *V, bool isParameter);
 
-  void add(SDDbgLabel *L) {
-    DbgLabels.push_back(L);
-  }
+  void add(SDDbgLabel *L) { DbgLabels.push_back(L); }
 
   /// Invalidate all DbgValues attached to the node and remove
   /// it from the Node-to-DbgValues map.
@@ -351,7 +344,7 @@ public:
     FlagInserter &operator=(const FlagInserter &) = delete;
     ~FlagInserter() { DAG.setFlagInserter(LastInserter); }
 
-    const SDNodeFlags getFlags() const { return Flags; }
+    SDNodeFlags getFlags() const { return Flags; }
   };
 
   /// When true, additional steps are taken to
@@ -487,7 +480,7 @@ public:
 
   /// Get graph attributes for a node. (eg. "color=red".)
   /// Used from getNodeAttributes.
-  const std::string getGraphAttrs(const SDNode *N) const;
+  std::string getGraphAttrs(const SDNode *N) const;
 
   /// Convenience for setting node color attribute.
   void setGraphColor(const SDNode *N, const char *Color);
@@ -840,6 +833,10 @@ public:
     return getNode(ISD::SPLAT_VECTOR, DL, VT, Op);
   }
 
+  /// Returns a vector of type ResVT whose elements contain the linear sequence
+  ///   <0, Step, Step * 2, Step * 3, ...>
+  SDValue getStepVector(const SDLoc &DL, EVT ResVT, SDValue Step);
+
   /// Returns an ISD::VECTOR_SHUFFLE node semantically equivalent to
   /// the shuffle node in input but with swapped operands.
   ///
@@ -1017,48 +1014,17 @@ public:
   /// stack arguments from being clobbered.
   SDValue getStackArgumentTokenFactor(SDValue Chain);
 
-  LLVM_ATTRIBUTE_DEPRECATED(SDValue getMemcpy(SDValue Chain, const SDLoc &dl,
-                                              SDValue Dst, SDValue Src,
-                                              SDValue Size, unsigned Align,
-                                              bool isVol, bool AlwaysInline,
-                                              bool isTailCall,
-                                              MachinePointerInfo DstPtrInfo,
-                                              MachinePointerInfo SrcPtrInfo),
-                            "Use the version that takes Align instead") {
-    return getMemcpy(Chain, dl, Dst, Src, Size, llvm::Align(Align), isVol,
-                     AlwaysInline, isTailCall, DstPtrInfo, SrcPtrInfo);
-  }
-
   SDValue getMemcpy(SDValue Chain, const SDLoc &dl, SDValue Dst, SDValue Src,
                     SDValue Size, Align Alignment, bool isVol,
                     bool AlwaysInline, bool isTailCall,
                     MachinePointerInfo DstPtrInfo,
                     MachinePointerInfo SrcPtrInfo);
 
-  LLVM_ATTRIBUTE_DEPRECATED(SDValue getMemmove(SDValue Chain, const SDLoc &dl,
-                                               SDValue Dst, SDValue Src,
-                                               SDValue Size, unsigned Align,
-                                               bool isVol, bool isTailCall,
-                                               MachinePointerInfo DstPtrInfo,
-                                               MachinePointerInfo SrcPtrInfo),
-                            "Use the version that takes Align instead") {
-    return getMemmove(Chain, dl, Dst, Src, Size, llvm::Align(Align), isVol,
-                      isTailCall, DstPtrInfo, SrcPtrInfo);
-  }
   SDValue getMemmove(SDValue Chain, const SDLoc &dl, SDValue Dst, SDValue Src,
                      SDValue Size, Align Alignment, bool isVol, bool isTailCall,
                      MachinePointerInfo DstPtrInfo,
                      MachinePointerInfo SrcPtrInfo);
 
-  LLVM_ATTRIBUTE_DEPRECATED(SDValue getMemset(SDValue Chain, const SDLoc &dl,
-                                              SDValue Dst, SDValue Src,
-                                              SDValue Size, unsigned Align,
-                                              bool isVol, bool isTailCall,
-                                              MachinePointerInfo DstPtrInfo),
-                            "Use the version that takes Align instead") {
-    return getMemset(Chain, dl, Dst, Src, Size, llvm::Align(Align), isVol,
-                     isTailCall, DstPtrInfo);
-  }
   SDValue getMemset(SDValue Chain, const SDLoc &dl, SDValue Dst, SDValue Src,
                     SDValue Size, Align Alignment, bool isVol, bool isTailCall,
                     MachinePointerInfo DstPtrInfo);
@@ -1178,19 +1144,6 @@ public:
     return getMemIntrinsicNode(Opcode, dl, VTList, Ops, MemVT, PtrInfo,
                                Alignment.getValueOr(getEVTAlign(MemVT)), Flags,
                                Size, AAInfo);
-  }
-
-  LLVM_ATTRIBUTE_DEPRECATED(
-      inline SDValue getMemIntrinsicNode(
-          unsigned Opcode, const SDLoc &dl, SDVTList VTList,
-          ArrayRef<SDValue> Ops, EVT MemVT, MachinePointerInfo PtrInfo,
-          unsigned Alignment,
-          MachineMemOperand::Flags Flags = MachineMemOperand::MOLoad |
-                                           MachineMemOperand::MOStore,
-          uint64_t Size = 0, const AAMDNodes &AAInfo = AAMDNodes()),
-      "") {
-    return getMemIntrinsicNode(Opcode, dl, VTList, Ops, MemVT, PtrInfo,
-                               MaybeAlign(Alignment), Flags, Size, AAInfo);
   }
 
   SDValue getMemIntrinsicNode(unsigned Opcode, const SDLoc &dl, SDVTList VTList,
@@ -1534,10 +1487,23 @@ public:
                                     unsigned FI, bool IsIndirect,
                                     const DebugLoc &DL, unsigned O);
 
+  /// Creates a FrameIndex SDDbgValue node.
+  SDDbgValue *getFrameIndexDbgValue(DIVariable *Var, DIExpression *Expr,
+                                    unsigned FI,
+                                    ArrayRef<SDNode *> Dependencies,
+                                    bool IsIndirect, const DebugLoc &DL,
+                                    unsigned O);
+
   /// Creates a VReg SDDbgValue node.
   SDDbgValue *getVRegDbgValue(DIVariable *Var, DIExpression *Expr,
                               unsigned VReg, bool IsIndirect,
                               const DebugLoc &DL, unsigned O);
+
+  /// Creates a SDDbgValue node from a list of locations.
+  SDDbgValue *getDbgValueList(DIVariable *Var, DIExpression *Expr,
+                              ArrayRef<SDDbgOperand> Locs,
+                              ArrayRef<SDNode *> Dependencies, bool IsIndirect,
+                              const DebugLoc &DL, unsigned O, bool IsVariadic);
 
   /// Creates a SDDbgLabel node.
   SDDbgLabel *getDbgLabel(DILabel *Label, const DebugLoc &DL, unsigned O);
@@ -1591,7 +1557,14 @@ public:
   /// chain to the token factor. This ensures that the new memory node will have
   /// the same relative memory dependency position as the old load. Returns the
   /// new merged load chain.
-  SDValue makeEquivalentMemoryOrdering(LoadSDNode *Old, SDValue New);
+  SDValue makeEquivalentMemoryOrdering(SDValue OldChain, SDValue NewMemOpChain);
+
+  /// If an existing load has uses of its chain, create a token factor node with
+  /// that chain and the new memory node's chain and update users of the old
+  /// chain to the token factor. This ensures that the new memory node will have
+  /// the same relative memory dependency position as the old load. Returns the
+  /// new merged load chain.
+  SDValue makeEquivalentMemoryOrdering(LoadSDNode *OldLoad, SDValue NewMemOp);
 
   /// Topological-sort the AllNodes list and a
   /// assign a unique node id for each node in the DAG based on their
@@ -1622,7 +1595,7 @@ public:
 
   /// Add a dbg_value SDNode. If SD is non-null that means the
   /// value is produced by SD.
-  void AddDbgValue(SDDbgValue *DB, SDNode *SD, bool isParameter);
+  void AddDbgValue(SDDbgValue *DB, bool isParameter);
 
   /// Add a dbg_label SDNode.
   void AddDbgLabel(SDDbgLabel *DB);
@@ -1730,6 +1703,11 @@ public:
   /// known to be the same type.
   bool MaskedValueIsZero(SDValue Op, const APInt &Mask,
                          const APInt &DemandedElts, unsigned Depth = 0) const;
+
+  /// Return true if the DemandedElts of the vector Op are all zero.  We
+  /// use this predicate to simplify operations downstream.
+  bool MaskedElementsAreZero(SDValue Op, const APInt &DemandedElts,
+                             unsigned Depth = 0) const;
 
   /// Return true if '(Op & Mask) == Mask'.
   /// Op and Mask are known to be the same type.
@@ -1895,14 +1873,6 @@ public:
   /// inferred.
   MaybeAlign InferPtrAlign(SDValue Ptr) const;
 
-  LLVM_ATTRIBUTE_DEPRECATED(inline unsigned InferPtrAlignment(SDValue Ptr)
-                                const,
-                            "Use InferPtrAlign instead") {
-    if (auto A = InferPtrAlign(Ptr))
-      return A->value();
-    return 0;
-  }
-
   /// Compute the VTs needed for the low/hi parts of a type
   /// which is split (or expanded) into two not necessarily identical pieces.
   std::pair<EVT, EVT> GetSplitDestVTs(const EVT &VT) const;
@@ -1952,14 +1922,14 @@ public:
   }
 
   /// Test whether the given value is a constant int or similar node.
-  SDNode *isConstantIntBuildVectorOrConstantInt(SDValue N);
+  SDNode *isConstantIntBuildVectorOrConstantInt(SDValue N) const;
 
   /// Test whether the given value is a constant FP or similar node.
-  SDNode *isConstantFPBuildVectorOrConstantFP(SDValue N);
+  SDNode *isConstantFPBuildVectorOrConstantFP(SDValue N) const ;
 
   /// \returns true if \p N is any kind of constant or build_vector of
   /// constants, int or float. If a vector, it may not necessarily be a splat.
-  inline bool isConstantValueOfAnyType(SDValue N) {
+  inline bool isConstantValueOfAnyType(SDValue N) const {
     return isConstantIntBuildVectorOrConstantInt(N) ||
            isConstantFPBuildVectorOrConstantFP(N);
   }

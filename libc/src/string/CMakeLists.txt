@@ -59,6 +59,25 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  memcmp
+  SRCS
+    memcmp.cpp
+  HDRS
+    memcmp.h
+)
+
+add_entrypoint_object(
+  memmove
+  SRCS
+    memmove.cpp
+  HDRS
+    memmove.h
+  DEPENDS
+    libc.src.__support.integer_operations
+    libc.src.string.memcpy
+)
+
+add_entrypoint_object(
   strchr
   SRCS
     strchr.cpp
@@ -192,11 +211,13 @@ endfunction()
 # ------------------------------------------------------------------------------
 
 # include the relevant architecture specific implementations
-if(${LIBC_TARGET_MACHINE} STREQUAL "x86_64")
-  set(LIBC_STRING_TARGET_ARCH "x86")
-  set(MEMCPY_SRC ${LIBC_SOURCE_DIR}/src/string/x86/memcpy.cpp)
+if(${LIBC_TARGET_ARCHITECTURE_IS_X86})
+  set(MEMCPY_SRC ${LIBC_SOURCE_DIR}/src/string/${LIBC_TARGET_ARCHITECTURE}/memcpy.cpp)
+elseif(${LIBC_TARGET_ARCHITECTURE_IS_AARCH64})
+  set(MEMCPY_SRC ${LIBC_SOURCE_DIR}/src/string/${LIBC_TARGET_ARCHITECTURE}/memcpy.cpp)
+#Disable tail merging as it leads to lower performance
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mllvm --tail-merge-threshold=0")
 else()
-  set(LIBC_STRING_TARGET_ARCH ${LIBC_TARGET_MACHINE})
   set(MEMCPY_SRC ${LIBC_SOURCE_DIR}/src/string/memcpy.cpp)
 endif()
 
@@ -213,7 +234,7 @@ function(add_memcpy memcpy_name)
   )
 endfunction()
 
-if(${LIBC_STRING_TARGET_ARCH} STREQUAL "x86")
+if(${LIBC_TARGET_ARCHITECTURE_IS_X86})
   add_memcpy(memcpy MARCH native)
 else()
   add_memcpy(memcpy)
@@ -236,7 +257,7 @@ function(add_memset memset_name)
   )
 endfunction()
 
-if(${LIBC_STRING_TARGET_ARCH} STREQUAL "x86")
+if(${LIBC_TARGET_ARCHITECTURE_IS_X86})
   add_memset(memset MARCH native)
 else()
   add_memset(memset)
@@ -260,7 +281,7 @@ function(add_bzero bzero_name)
   )
 endfunction()
 
-if(${LIBC_STRING_TARGET_ARCH} STREQUAL "x86")
+if(${LIBC_TARGET_ARCHITECTURE_IS_X86})
   add_bzero(bzero MARCH native)
 else()
   add_bzero(bzero)
@@ -270,6 +291,6 @@ endif()
 # Add all other relevant implementations for the native target.
 # ------------------------------------------------------------------------------
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${LIBC_STRING_TARGET_ARCH})
-  include(${LIBC_STRING_TARGET_ARCH}/CMakeLists.txt)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${LIBC_TARGET_ARCHITECTURE})
+  include(${LIBC_TARGET_ARCHITECTURE}/CMakeLists.txt)
 endif()

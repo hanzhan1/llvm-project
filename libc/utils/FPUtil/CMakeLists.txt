@@ -1,11 +1,11 @@
-if(${LIBC_TARGET_MACHINE} MATCHES "^x86.*")
+if(${LIBC_TARGET_ARCHITECTURE_IS_X86})
   set(LONG_DOUBLE_HDR LongDoubleBitsX86.h)
 else()
   set(LONG_DOUBLE_HDR)
 endif()
 
-if(EXISTS ${LIBC_TARGET_MACHINE})
-  set(FENV_IMPL ${LIBC_TARGET_MACHINE}/FEnv.h)
+if(EXISTS ${LIBC_TARGET_ARCHITECTURE})
+  set(FENV_IMPL ${LIBC_TARGET_ARCHITECTURE}/FEnv.h)
 else()
   set(FENV_IMPL DummyFEnv.h)
 endif()
@@ -29,6 +29,9 @@ add_header_library(
     NormalFloat.h
   DEPENDS
     libc.include.math
+    libc.include.errno
+    libc.include.fenv
+    libc.src.__support.common
     libc.utils.CPP.standalone_cpp
 )
 

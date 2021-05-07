@@ -242,9 +242,8 @@ class DumpVisitor : public RecursiveASTVisitor<DumpVisitor> {
         return "const";
       return "";
     }
-    if (isa<IntegerLiteral>(S) || isa<FloatingLiteral>(S) ||
-        isa<FixedPointLiteral>(S) || isa<CharacterLiteral>(S) ||
-        isa<ImaginaryLiteral>(S) || isa<CXXBoolLiteralExpr>(S))
+    if (isa<IntegerLiteral, FloatingLiteral, FixedPointLiteral,
+            CharacterLiteral, ImaginaryLiteral, CXXBoolLiteralExpr>(S))
       return toString([&](raw_ostream &OS) {
         S->printPretty(OS, nullptr, Ctx.getPrintingPolicy());
       });
@@ -336,9 +335,14 @@ public:
 
   // Override traversal to record the nodes we care about.
   // Generally, these are nodes with position information (TypeLoc, not Type).
+
   bool TraverseDecl(Decl *D) {
-    return !D || isInjectedClassName(D) ||
-           traverseNode("declaration", D, [&] { Base::TraverseDecl(D); });
+    return !D || isInjectedClassName(D) || traverseNode("declaration", D, [&] {
+      if (isa<TranslationUnitDecl>(D))
+        Base::TraverseAST(const_cast<ASTContext &>(Ctx));
+      else
+        Base::TraverseDecl(D);
+    });
   }
   bool TraverseTypeLoc(TypeLoc TL) {
     return !TL || traverseNode("type", TL, [&] { Base::TraverseTypeLoc(TL); });

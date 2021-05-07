@@ -384,7 +384,8 @@ class _LocalProcess(_BaseProcess):
             [executable] + args,
             stdout=open(
                 os.devnull) if not self._trace_on else None,
-            stdin=PIPE)
+            stdin=PIPE,
+            preexec_fn=lldbplatformutil.enable_attach)
 
     def terminate(self):
         if self._proc.poll() is None:
@@ -1268,12 +1269,12 @@ class Base(unittest2.TestCase):
             return True
         return False
 
-    def isAArch64SVE(self):
+    def getCPUInfo(self):
         triple = self.dbg.GetSelectedPlatform().GetTriple()
 
         # TODO other platforms, please implement this function
         if not re.match(".*-.*-linux", triple):
-            return False
+            return ""
 
         # Need to do something different for non-Linux/Android targets
         cpuinfo_path = self.getBuildArtifact("cpuinfo")
@@ -1283,37 +1284,21 @@ class Base(unittest2.TestCase):
             cpuinfo_path = "/proc/cpuinfo"
 
         try:
-            f = open(cpuinfo_path, 'r')
-            cpuinfo = f.read()
-            f.close()
+            with open(cpuinfo_path, 'r') as f:
+                cpuinfo = f.read()
         except:
-            return False
+            return ""
 
-        return " sve " in cpuinfo
+        return cpuinfo
 
-    def hasLinuxVmFlags(self):
-        """ Check that the target machine has "VmFlags" lines in
-        its /proc/{pid}/smaps files."""
+    def isAArch64SVE(self):
+        return "sve" in self.getCPUInfo()
 
-        triple = self.dbg.GetSelectedPlatform().GetTriple()
-        if not re.match(".*-.*-linux", triple):
-            return False
+    def isAArch64MTE(self):
+        return "mte" in self.getCPUInfo()
 
-        self.runCmd('platform process list')
-        pid = None
-        for line in self.res.GetOutput().splitlines():
-            if 'lldb-server' in line:
-                pid = line.split(' ')[0]
-                break
-
-        if pid is None:
-            return False
-
-        smaps_path = self.getBuildArtifact('smaps')
-        self.runCmd('platform get-file "/proc/{}/smaps" {}'.format(pid, smaps_path))
-
-        with open(smaps_path, 'r') as f:
-            return "VmFlags" in f.read()
+    def isAArch64PAuth(self):
+        return "paca" in self.getCPUInfo()
 
     def getArchitecture(self):
         """Returns the architecture in effect the test suite is running with."""
@@ -1765,6 +1750,19 @@ class Base(unittest2.TestCase):
                 "Don't know how to do cleanup with dictionary: " +
                 dictionary)
 
+    def invoke(self, obj, name, trace=False):
+        """Use reflection to call a method dynamically with no argument."""
+        trace = (True if traceAlways else trace)
+
+        method = getattr(obj, name)
+        import inspect
+        self.assertTrue(inspect.ismethod(method),
+                        name + "is a method name of object: " + str(obj))
+        result = method()
+        with recording(self, trace) as sbuf:
+            print(str(method) + ":", result, file=sbuf)
+        return result
+
     def getLLDBLibraryEnvVal(self):
         """ Returns the path that the OS-specific library search environment variable
             (self.dylibPath) should be set to in order for a program to find the LLDB
@@ -1784,6 +1782,12 @@ class Base(unittest2.TestCase):
             return ['libc++.so.1']
         else:
             return ['libc++.1.dylib', 'libc++abi.']
+
+    def run_platform_command(self, cmd):
+        platform = self.dbg.GetSelectedPlatform()
+        shell_command = lldb.SBPlatformShellCommand(cmd)
+        err = platform.Run(shell_command)
+        return (err, shell_command.GetStatus(), shell_command.GetOutput())
 
 # Metaclass for TestBase to change the list of test metods when a new TestCase is loaded.
 # We change the test methods to create a new test method for each test for each debug info we are
@@ -2618,19 +2622,6 @@ FileCheck output:
         value_check.check_value(self, eval_result, str(eval_result))
         return eval_result
 
-    def invoke(self, obj, name, trace=False):
-        """Use reflection to call a method dynamically with no argument."""
-        trace = (True if traceAlways else trace)
-
-        method = getattr(obj, name)
-        import inspect
-        self.assertTrue(inspect.ismethod(method),
-                        name + "is a method name of object: " + str(obj))
-        result = method()
-        with recording(self, trace) as sbuf:
-            print(str(method) + ":", result, file=sbuf)
-        return result
-
     def build(
             self,
             architecture=None,
@@ -2655,12 +2646,6 @@ FileCheck output:
             return self.buildGModules(architecture, compiler, dictionary)
         else:
             self.fail("Can't build for debug info: %s" % self.getDebugInfo())
-
-    def run_platform_command(self, cmd):
-        platform = self.dbg.GetSelectedPlatform()
-        shell_command = lldb.SBPlatformShellCommand(cmd)
-        err = platform.Run(shell_command)
-        return (err, shell_command.GetStatus(), shell_command.GetOutput())
 
     """Assert that an lldb.SBError is in the "success" state."""
     def assertSuccess(self, obj, msg=None):

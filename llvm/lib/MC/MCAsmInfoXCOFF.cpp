@@ -19,10 +19,18 @@ void MCAsmInfoXCOFF::anchor() {}
 MCAsmInfoXCOFF::MCAsmInfoXCOFF() {
   IsLittleEndian = false;
   HasVisibilityOnlyWithLinkage = true;
+  HasBasenameOnlyForFileDirective = false;
+
+  // For XCOFF, string constant consists of any number of characters enclosed in
+  // "" (double quotation marks).
+  HasPairedDoubleQuoteStringConstants = true;
+
   PrivateGlobalPrefix = "L..";
   PrivateLabelPrefix = "L..";
   SupportsQuotedNames = false;
   UseDotAlignForAlignment = true;
+  UsesDwarfFileAndLocDirectives = false;
+  DwarfSectionSizeRequired = false;
   if (UseLEB128Directives == cl::BOU_UNSET)
     HasLEB128Directives = false;
   ZeroDirective = "\t.space\t";

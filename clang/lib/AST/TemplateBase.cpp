@@ -80,6 +80,26 @@ static void printIntegral(const TemplateArgument &TemplArg,
   }
 }
 
+static unsigned getArrayDepth(QualType type) {
+  unsigned count = 0;
+  while (const auto *arrayType = type->getAsArrayTypeUnsafe()) {
+    count++;
+    type = arrayType->getElementType();
+  }
+  return count;
+}
+
+static bool needsAmpersandOnTemplateArg(QualType paramType, QualType argType) {
+  // Generally, if the parameter type is a pointer, we must be taking the
+  // address of something and need a &.  However, if the argument is an array,
+  // this could be implicit via array-to-pointer decay.
+  if (!paramType->isPointerType())
+    return paramType->isMemberPointerType();
+  if (argType->isArrayType())
+    return getArrayDepth(argType) == getArrayDepth(paramType->getPointeeType());
+  return true;
+}
+
 //===----------------------------------------------------------------------===//
 // TemplateArgument Implementation
 //===----------------------------------------------------------------------===//
@@ -244,6 +264,7 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     break;
 
   case Declaration:
+    getParamTypeForDecl().Profile(ID);
     ID.AddPointer(getAsDecl()? getAsDecl()->getCanonicalDecl() : nullptr);
     break;
 
@@ -362,8 +383,10 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
         break;
       }
     }
-    if (!getParamTypeForDecl()->isReferenceType())
-      Out << '&';
+    if (auto *VD = dyn_cast<ValueDecl>(ND)) {
+      if (needsAmpersandOnTemplateArg(getParamTypeForDecl(), VD->getType()))
+        Out << "&";
+    }
     ND->printQualifiedName(Out);
     break;
   }
@@ -523,8 +546,8 @@ clang::TemplateArgumentLocInfo::TemplateArgumentLocInfo(
   TemplateTemplateArgLocInfo *Template = new (Ctx) TemplateTemplateArgLocInfo;
   Template->Qualifier = QualifierLoc.getNestedNameSpecifier();
   Template->QualifierLocData = QualifierLoc.getOpaqueData();
-  Template->TemplateNameLoc = TemplateNameLoc.getRawEncoding();
-  Template->EllipsisLoc = EllipsisLoc.getRawEncoding();
+  Template->TemplateNameLoc = TemplateNameLoc;
+  Template->EllipsisLoc = EllipsisLoc;
   Pointer = Template;
 }
 

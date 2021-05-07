@@ -133,7 +133,7 @@ static const std::map<std::string, KernelArgMD::ValueKind> ArgValueKind = {
     {"hidden_hostcall_buffer", KernelArgMD::ValueKind::HiddenHostcallBuffer},
 };
 
-// public variables -- TODO(ashwinma) move these to a runtime object?
+// global variables. TODO: Get rid of these
 atmi_machine_t g_atmi_machine;
 ATLMachine g_atl_machine;
 
@@ -172,12 +172,12 @@ atmi_machine_t *Runtime::GetMachineInfo() {
   return &g_atmi_machine;
 }
 
-void atl_set_atmi_initialized() {
+static void atl_set_atmi_initialized() {
   // FIXME: thread safe? locks?
   g_atmi_initialized = true;
 }
 
-void atl_reset_atmi_initialized() {
+static void atl_reset_atmi_initialized() {
   // FIXME: thread safe? locks?
   g_atmi_initialized = false;
 }
@@ -210,8 +210,6 @@ atmi_status_t Runtime::Initialize() {
 }
 
 atmi_status_t Runtime::Finalize() {
-  // TODO(ashwinma): Finalize all processors, queues, signals, kernarg memory
-  // regions
   hsa_status_t err;
 
   for (uint32_t i = 0; i < g_executables.size(); i++) {
@@ -235,7 +233,7 @@ atmi_status_t Runtime::Finalize() {
   return ATMI_STATUS_SUCCESS;
 }
 
-void atmi_init_context_structs() {
+static void atmi_init_context_structs() {
   atlc_p = &atlc;
   atlc.struct_initialized = true; /* This only gets called one time */
   atlc.g_hsa_initialized = false;
@@ -611,7 +609,7 @@ atmi_status_t atl_init_gpu_context() {
     return ATMI_STATUS_SUCCESS;
 }
 
-bool isImplicit(KernelArgMD::ValueKind value_kind) {
+static bool isImplicit(KernelArgMD::ValueKind value_kind) {
   switch (value_kind) {
   case KernelArgMD::ValueKind::HiddenGlobalOffsetX:
   case KernelArgMD::ValueKind::HiddenGlobalOffsetY:
@@ -824,7 +822,6 @@ static hsa_status_t get_code_object_custom_metadata(void *binary,
   for (size_t i = 0; i < kernelsSize; i++) {
     assert(msgpack_errors == 0);
     std::string kernelName;
-    std::string languageName;
     std::string symbolName;
 
     msgpack::byte_range element;
@@ -832,11 +829,34 @@ static hsa_status_t get_code_object_custom_metadata(void *binary,
     msgpackErrorCheck(element lookup in kernel metadata, msgpack_errors);
 
     msgpack_errors += map_lookup_string(element, ".name", &kernelName);
-    msgpack_errors += map_lookup_string(element, ".language", &languageName);
     msgpack_errors += map_lookup_string(element, ".symbol", &symbolName);
     msgpackErrorCheck(strings lookup in kernel metadata, msgpack_errors);
 
-    atl_kernel_info_t info = {0, 0, 0, 0, 0, {}, {}, {}};
+    atl_kernel_info_t info = {0, 0, 0, 0, 0, 0, 0, 0, 0, {}, {}, {}};
+
+    uint64_t sgpr_count, vgpr_count, sgpr_spill_count, vgpr_spill_count;
+    msgpack_errors += map_lookup_uint64_t(element, ".sgpr_count", &sgpr_count);
+    msgpackErrorCheck(sgpr count metadata lookup in kernel metadata,
+                      msgpack_errors);
+    info.sgpr_count = sgpr_count;
+
+    msgpack_errors += map_lookup_uint64_t(element, ".vgpr_count", &vgpr_count);
+    msgpackErrorCheck(vgpr count metadata lookup in kernel metadata,
+                      msgpack_errors);
+    info.vgpr_count = vgpr_count;
+
+    msgpack_errors +=
+        map_lookup_uint64_t(element, ".sgpr_spill_count", &sgpr_spill_count);
+    msgpackErrorCheck(sgpr spill count metadata lookup in kernel metadata,
+                      msgpack_errors);
+    info.sgpr_spill_count = sgpr_spill_count;
+
+    msgpack_errors +=
+        map_lookup_uint64_t(element, ".vgpr_spill_count", &vgpr_spill_count);
+    msgpackErrorCheck(vgpr spill count metadata lookup in kernel metadata,
+                      msgpack_errors);
+    info.vgpr_spill_count = vgpr_spill_count;
+
     size_t kernel_explicit_args_size = 0;
     uint64_t kernel_segment_size;
     msgpack_errors += map_lookup_uint64_t(element, ".kernarg_segment_size",
@@ -874,8 +894,6 @@ static hsa_status_t get_code_object_custom_metadata(void *binary,
         msgpackErrorCheck(iterate args map in kernel args metadata,
                           msgpack_errors);
 
-        // TODO(ashwinma): should the below population actions be done only for
-        // non-implicit args?
         // populate info with sizes and offsets
         info.arg_sizes.push_back(lcArg.size_);
         // v3 has offset field and not align field

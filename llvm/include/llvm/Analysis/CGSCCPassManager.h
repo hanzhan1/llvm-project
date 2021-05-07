@@ -487,6 +487,18 @@ private:
   std::unique_ptr<PassConceptT> Pass;
 };
 
+/// A 'signaling' analysis to indicate whether a function has been changed. It
+/// is meant to control the runs of the function pass(es) managed by the
+/// FunctionAnalysisManagerCGSCCProxy.
+class FunctionStatusAnalysis
+    : public AnalysisInfoMixin<FunctionStatusAnalysis> {
+public:
+  static AnalysisKey Key;
+  struct Result {};
+
+  Result run(Function &F, FunctionAnalysisManager &FAM) { return Result(); }
+};
+
 /// A function to deduce a function pass type and wrap it in the
 /// templated adaptor.
 template <typename FunctionPassT>
@@ -498,10 +510,6 @@ createCGSCCToFunctionPassAdaptor(FunctionPassT Pass) {
   return CGSCCToFunctionPassAdaptor(
       std::make_unique<PassModelT>(std::move(Pass)));
 }
-
-/// Checks -abort-on-max-devirt-iterations-reached to see if we should report an
-/// error.
-void maxDevirtIterationsReached();
 
 /// A helper that repeats an SCC pass each time an indirect call is refined to
 /// a direct call by that pass.

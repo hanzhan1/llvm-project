@@ -13,7 +13,6 @@
 #define LLVM_CLANG_LIB_BASIC_TARGETS_OSTARGETS_H
 
 #include "Targets.h"
-#include "llvm/MC/MCSectionMachO.h"
 
 namespace clang {
 namespace targets {
@@ -112,15 +111,6 @@ public:
     }
 
     this->MCountName = "\01mcount";
-  }
-
-  std::string isValidSectionSpecifier(StringRef SR) const override {
-    // Let MCSectionMachO validate this.
-    StringRef Segment, Section;
-    unsigned TAA, StubSize;
-    bool HasTAA;
-    return llvm::MCSectionMachO::ParseSectionSpecifier(SR, Segment, Section,
-                                                       TAA, HasTAA, StubSize);
   }
 
   const char *getStaticInitSectionSpecifier() const override {
@@ -253,12 +243,16 @@ public:
     case llvm::Triple::mips:
     case llvm::Triple::mipsel:
     case llvm::Triple::ppc:
+    case llvm::Triple::ppcle:
     case llvm::Triple::ppc64:
     case llvm::Triple::ppc64le:
       this->MCountName = "_mcount";
       break;
     case llvm::Triple::arm:
       this->MCountName = "__mcount";
+      break;
+    case llvm::Triple::riscv32:
+    case llvm::Triple::riscv64:
       break;
     }
   }
@@ -413,6 +407,7 @@ public:
     case llvm::Triple::mips64:
     case llvm::Triple::mips64el:
     case llvm::Triple::ppc:
+    case llvm::Triple::ppcle:
     case llvm::Triple::ppc64:
     case llvm::Triple::ppc64le:
       this->MCountName = "_mcount";
@@ -488,6 +483,9 @@ public:
     case llvm::Triple::ppc64le:
     case llvm::Triple::sparcv9:
       this->MCountName = "_mcount";
+      break;
+    case llvm::Triple::riscv32:
+    case llvm::Triple::riscv64:
       break;
     }
   }
@@ -786,8 +784,10 @@ public:
   ZOSTargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)
       : OSTargetInfo<Target>(Triple, Opts) {
     this->WCharType = TargetInfo::UnsignedInt;
+    this->MaxAlignedAttribute = 128;
     this->UseBitFieldTypeAlignment = false;
     this->UseZeroLengthBitfieldAlignment = true;
+    this->UseLeadingZeroLengthBitfield = false;
     this->ZeroLengthBitfieldBoundary = 32;
     this->MinGlobalAlign = 0;
     this->DefaultAlignForAttributeAligned = 128;
@@ -938,6 +938,8 @@ class LLVM_LIBRARY_VISIBILITY EmscriptenTargetInfo
                     MacroBuilder &Builder) const final {
     WebAssemblyOSTargetInfo<Target>::getOSDefines(Opts, Triple, Builder);
     Builder.defineMacro("__EMSCRIPTEN__");
+    if (Opts.POSIXThreads)
+      Builder.defineMacro("__EMSCRIPTEN_PTHREADS__");
   }
 
 public:

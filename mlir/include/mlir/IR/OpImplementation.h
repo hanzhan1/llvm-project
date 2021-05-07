@@ -36,6 +36,10 @@ public:
   virtual ~OpAsmPrinter();
   virtual raw_ostream &getStream() const = 0;
 
+  /// Print a newline and indent the printer to the start of the current
+  /// operation.
+  virtual void printNewline() = 0;
+
   /// Print implementations for various things an operation contains.
   virtual void printOperand(Value value) = 0;
   virtual void printOperand(Value value, raw_ostream &os) = 0;
@@ -88,8 +92,13 @@ public:
   virtual void printGenericOp(Operation *op) = 0;
 
   /// Prints a region.
+  /// If 'printEntryBlockArgs' is false, the arguments of the
+  /// block are not printed. If 'printBlockTerminator' is false, the terminator
+  /// operation of the block is not printed. If printEmptyBlock is true, then
+  /// the block header is printed even if the block is empty.
   virtual void printRegion(Region &blocks, bool printEntryBlockArgs = true,
-                           bool printBlockTerminators = true) = 0;
+                           bool printBlockTerminators = true,
+                           bool printEmptyBlock = false) = 0;
 
   /// Renumber the arguments for the specified region to the same names as the
   /// SSA values in namesToUse.  This may only be used for IsolatedFromAbove
@@ -103,6 +112,13 @@ public:
   /// dimensions/symbol identifiers according to mlir::isValidDim/Symbol.
   virtual void printAffineMapOfSSAIds(AffineMapAttr mapAttr,
                                       ValueRange operands) = 0;
+
+  /// Prints an affine expression of SSA ids with SSA id names used instead of
+  /// dims and symbols.
+  /// Operand values must come from single-result sources, and be valid
+  /// dimensions/symbol identifiers according to mlir::isValidDim/Symbol.
+  virtual void printAffineExprOfSSAIds(AffineExpr expr, ValueRange dimOperands,
+                                       ValueRange symOperands) = 0;
 
   /// Print an optional arrow followed by a type list.
   template <typename TypeRange>
@@ -124,16 +140,15 @@ public:
   }
 
   /// Print the complete type of an operation in functional form.
-  void printFunctionalType(Operation *op) {
-    printFunctionalType(op->getOperandTypes(), op->getResultTypes());
-  }
+  void printFunctionalType(Operation *op);
+
   /// Print the two given type ranges in a functional form.
   template <typename InputRangeT, typename ResultRangeT>
   void printFunctionalType(InputRangeT &&inputs, ResultRangeT &&results) {
     auto &os = getStream();
-    os << "(";
+    os << '(';
     llvm::interleaveComma(inputs, *this);
-    os << ")";
+    os << ')';
     printArrowTypeList(results);
   }
 
@@ -409,6 +424,36 @@ public:
   /// Parse a `...` token if present;
   virtual ParseResult parseOptionalEllipsis() = 0;
 
+  /// Parse an integer value from the stream.
+  template <typename IntT>
+  ParseResult parseInteger(IntT &result) {
+    auto loc = getCurrentLocation();
+    OptionalParseResult parseResult = parseOptionalInteger(result);
+    if (!parseResult.hasValue())
+      return emitError(loc, "expected integer value");
+    return *parseResult;
+  }
+
+  /// Parse an optional integer value from the stream.
+  virtual OptionalParseResult parseOptionalInteger(uint64_t &result) = 0;
+
+  template <typename IntT>
+  OptionalParseResult parseOptionalInteger(IntT &result) {
+    auto loc = getCurrentLocation();
+
+    // Parse the unsigned variant.
+    uint64_t uintResult;
+    OptionalParseResult parseResult = parseOptionalInteger(uintResult);
+    if (!parseResult.hasValue() || failed(*parseResult))
+      return parseResult;
+
+    // Try to convert to the provided integer type.
+    result = IntT(uintResult);
+    if (uint64_t(result) != uintResult)
+      return emitError(loc, "integer value too large");
+    return success();
+  }
+
   //===--------------------------------------------------------------------===//
   // Attribute Parsing
   //===--------------------------------------------------------------------===//
@@ -642,6 +687,14 @@ public:
                          StringRef attrName, NamedAttrList &attrs,
                          Delimiter delimiter = Delimiter::Square) = 0;
 
+  /// Parses an affine expression where dims and symbols are SSA operands.
+  /// Operand values must come from single-result sources, and be valid
+  /// dimensions/symbol identifiers according to mlir::isValidDim/Symbol.
+  virtual ParseResult
+  parseAffineExprOfSSAIds(SmallVectorImpl<OperandType> &dimOperands,
+                          SmallVectorImpl<OperandType> &symbOperands,
+                          AffineExpr &expr) = 0;
+
   //===--------------------------------------------------------------------===//
   // Region Parsing
   //===--------------------------------------------------------------------===//
@@ -796,6 +849,22 @@ public:
   parseOptionalAssignmentList(SmallVectorImpl<OperandType> &lhs,
                               SmallVectorImpl<OperandType> &rhs) = 0;
 
+  /// Parse a list of assignments of the form
+  ///   (%x1 = %y1 : type1, %x2 = %y2 : type2, ...)
+  ParseResult parseAssignmentListWithTypes(SmallVectorImpl<OperandType> &lhs,
+                                           SmallVectorImpl<OperandType> &rhs,
+                                           SmallVectorImpl<Type> &types) {
+    OptionalParseResult result =
+        parseOptionalAssignmentListWithTypes(lhs, rhs, types);
+    if (!result.hasValue())
+      return emitError(getCurrentLocation(), "expected '('");
+    return result.getValue();
+  }
+
+  virtual OptionalParseResult
+  parseOptionalAssignmentListWithTypes(SmallVectorImpl<OperandType> &lhs,
+                                       SmallVectorImpl<OperandType> &rhs,
+                                       SmallVectorImpl<Type> &types) = 0;
   /// Parse a keyword followed by a type.
   ParseResult parseKeywordType(const char *keyword, Type &result) {
     return failure(parseKeyword(keyword) || parseType(result));
