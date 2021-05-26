@@ -11,6 +11,7 @@
 #include "llvm/ADT/Triple.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include "llvm/BinaryFormat/Wasm.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSection.h"
@@ -791,9 +792,10 @@ void MCObjectFileInfo::initWasmMCObjectFileInfo(const Triple &T) {
   DwarfLineSection =
       Ctx->getWasmSection(".debug_line", SectionKind::getMetadata());
   DwarfLineStrSection =
-      Ctx->getWasmSection(".debug_line_str", SectionKind::getMetadata());
-  DwarfStrSection =
-      Ctx->getWasmSection(".debug_str", SectionKind::getMetadata());
+      Ctx->getWasmSection(".debug_line_str", SectionKind::getMetadata(),
+                          wasm::WASM_SEG_FLAG_STRINGS);
+  DwarfStrSection = Ctx->getWasmSection(
+      ".debug_str", SectionKind::getMetadata(), wasm::WASM_SEG_FLAG_STRINGS);
   DwarfLocSection =
       Ctx->getWasmSection(".debug_loc", SectionKind::getMetadata());
   DwarfAbbrevSection =
@@ -836,7 +838,8 @@ void MCObjectFileInfo::initWasmMCObjectFileInfo(const Triple &T) {
   DwarfAbbrevDWOSection =
       Ctx->getWasmSection(".debug_abbrev.dwo", SectionKind::getMetadata());
   DwarfStrDWOSection =
-      Ctx->getWasmSection(".debug_str.dwo", SectionKind::getMetadata());
+      Ctx->getWasmSection(".debug_str.dwo", SectionKind::getMetadata(),
+                          wasm::WASM_SEG_FLAG_STRINGS);
   DwarfLineDWOSection =
       Ctx->getWasmSection(".debug_line.dwo", SectionKind::getMetadata());
   DwarfLocDWOSection =
@@ -855,9 +858,9 @@ void MCObjectFileInfo::initWasmMCObjectFileInfo(const Triple &T) {
 
   // DWP Sections
   DwarfCUIndexSection =
-      Ctx->getWasmSection(".debug_cu_index", SectionKind::getMetadata(), 0);
+      Ctx->getWasmSection(".debug_cu_index", SectionKind::getMetadata());
   DwarfTUIndexSection =
-      Ctx->getWasmSection(".debug_tu_index", SectionKind::getMetadata(), 0);
+      Ctx->getWasmSection(".debug_tu_index", SectionKind::getMetadata());
 
   // Wasm use data section for LSDA.
   // TODO Consider putting each function's exception table in a separate
@@ -1008,8 +1011,8 @@ MCSection *MCObjectFileInfo::getDwarfComdatSection(const char *Name,
     return Ctx->getELFSection(Name, ELF::SHT_PROGBITS, ELF::SHF_GROUP, 0,
                               utostr(Hash), /*IsComdat=*/true);
   case Triple::Wasm:
-    return Ctx->getWasmSection(Name, SectionKind::getMetadata(), utostr(Hash),
-                               MCContext::GenericSectionID);
+    return Ctx->getWasmSection(Name, SectionKind::getMetadata(), 0,
+                               utostr(Hash), MCContext::GenericSectionID);
   case Triple::MachO:
   case Triple::COFF:
   case Triple::GOFF:

@@ -31,7 +31,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/BinaryFormat/Magic.h"
-#include "llvm/Config/config.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Option/ArgList.h"
@@ -421,13 +421,13 @@ static void parseOrderFile(StringRef path) {
                           .StartsWith("ppc:", CPU_TYPE_POWERPC)
                           .StartsWith("ppc64:", CPU_TYPE_POWERPC64)
                           .Default(CPU_TYPE_ANY);
+
+    if (cpuType != CPU_TYPE_ANY && cpuType != target->cpuType)
+      continue;
+
     // Drop the CPU type as well as the colon
     if (cpuType != CPU_TYPE_ANY)
       line = line.drop_until([](char c) { return c == ':'; }).drop_front();
-    // TODO: Update when we extend support for other CPUs
-    if (cpuType != CPU_TYPE_ANY && cpuType != CPU_TYPE_X86_64 &&
-        cpuType != CPU_TYPE_ARM64)
-      continue;
 
     constexpr std::array<StringRef, 2> fileEnds = {".o:", ".o):"};
     for (StringRef fileEnd : fileEnds) {
@@ -521,7 +521,8 @@ static void replaceCommonSymbols() {
                            /*size=*/0,
                            /*isWeakDef=*/false,
                            /*isExternal=*/true, common->privateExtern,
-                           /*isThumb=*/false);
+                           /*isThumb=*/false,
+                           /*isReferencedDynamically=*/false);
   }
 }
 
@@ -751,6 +752,30 @@ static uint32_t parseProtection(StringRef protStr) {
   return prot;
 }
 
+static std::vector<SectionAlign> parseSectAlign(const opt::InputArgList &args) {
+  std::vector<SectionAlign> sectAligns;
+  for (const Arg *arg : args.filtered(OPT_sectalign)) {
+    StringRef segName = arg->getValue(0);
+    StringRef sectName = arg->getValue(1);
+    StringRef alignStr = arg->getValue(2);
+    if (alignStr.startswith("0x") || alignStr.startswith("0X"))
+      alignStr = alignStr.drop_front(2);
+    uint32_t align;
+    if (alignStr.getAsInteger(16, align)) {
+      error("-sectalign: failed to parse '" + StringRef(arg->getValue(2)) +
+            "' as number");
+      continue;
+    }
+    if (!isPowerOf2_32(align)) {
+      error("-sectalign: '" + StringRef(arg->getValue(2)) +
+            "' (in base 16) not a power of two");
+      continue;
+    }
+    sectAligns.push_back({segName, sectName, align});
+  }
+  return sectAligns;
+}
+
 static bool dataConstDefault(const InputArgList &args) {
   switch (config->outputType) {
   case MH_EXECUTE:
@@ -869,7 +894,6 @@ bool macho::link(ArrayRef<const char *> argsArr, bool canExitEarly,
 
   errorHandler().logName = args::getFilenameWithoutExe(argsArr[0]);
   stderrOS.enable_colors(stderrOS.has_colors());
-  // TODO: Set up error handler properly, e.g. the errorLimitExceededMsg
 
   MachOOptTable parser;
   InputArgList args = parser.parse(argsArr.slice(1));
@@ -878,6 +902,7 @@ bool macho::link(ArrayRef<const char *> argsArr, bool canExitEarly,
       "too many errors emitted, stopping now "
       "(use --error-limit=0 to see all errors)";
   errorHandler().errorLimit = args::getInteger(args, OPT_error_limit_eq, 20);
+  errorHandler().verbose = args.hasArg(OPT_verbose);
 
   if (args.hasArg(OPT_help_hidden)) {
     parser.printHelp(argsArr[0], /*showHidden=*/true);
@@ -927,9 +952,6 @@ bool macho::link(ArrayRef<const char *> argsArr, bool canExitEarly,
   if (!get_threadpool_strategy(config->thinLTOJobs))
     error("--thinlto-jobs: invalid job count: " + config->thinLTOJobs);
 
-  config->entry = symtab->addUndefined(args.getLastArgValue(OPT_e, "_main"),
-                                       /*file=*/nullptr,
-                                       /*isWeakRef=*/false);
   for (const Arg *arg : args.filtered(OPT_u)) {
     config->explicitUndefineds.push_back(symtab->addUndefined(
         arg->getValue(), /*file=*/nullptr, /*isWeakRef=*/false));
@@ -970,7 +992,7 @@ bool macho::link(ArrayRef<const char *> argsArr, bool canExitEarly,
       args.hasFlag(OPT_encryptable, OPT_no_encryption,
                    is_contained(encryptablePlatforms, config->platform()));
 
-#ifndef HAVE_LIBXAR
+#ifndef LLVM_HAVE_LIBXAR
   if (config->emitBitcodeBundle)
     error("-bitcode_bundle unsupported because LLD wasn't built with libxar");
 #endif
@@ -1001,6 +1023,11 @@ bool macho::link(ArrayRef<const char *> argsArr, bool canExitEarly,
                                 : NamespaceKind::flat;
 
   config->undefinedSymbolTreatment = getUndefinedSymbolTreatment(args);
+
+  if (config->outputType == MH_EXECUTE)
+    config->entry = symtab->addUndefined(args.getLastArgValue(OPT_e, "_main"),
+                                         /*file=*/nullptr,
+                                         /*isWeakRef=*/false);
 
   config->librarySearchPaths =
       getLibrarySearchPaths(args, config->systemLibraryRoots);
@@ -1038,6 +1065,8 @@ bool macho::link(ArrayRef<const char *> argsArr, bool canExitEarly,
         validName(arg->getValue(1));
   }
 
+  config->sectionAlignments = parseSectAlign(args);
+
   for (const Arg *arg : args.filtered(OPT_segprot)) {
     StringRef segName = arg->getValue(0);
     uint32_t maxProt = parseProtection(arg->getValue(1));
@@ -1059,6 +1088,12 @@ bool macho::link(ArrayRef<const char *> argsArr, bool canExitEarly,
           ">>> ignoring unexports");
     config->unexportedSymbols.clear();
   }
+  // Explicitly-exported literal symbols must be defined, but might
+  // languish in an archive if unreferenced elsewhere. Light a fire
+  // under those lazy symbols!
+  for (const CachedHashStringRef &cachedName : config->exportedSymbols.literals)
+    symtab->addUndefined(cachedName.val(), /*file=*/nullptr,
+                         /*isWeakRef=*/false);
 
   config->saveTemps = args.hasArg(OPT_save_temps);
 
@@ -1136,32 +1171,51 @@ bool macho::link(ArrayRef<const char *> argsArr, bool canExitEarly,
     if (!orderFile.empty())
       parseOrderFile(orderFile);
 
-    if (config->outputType == MH_EXECUTE && isa<Undefined>(config->entry)) {
-      error("undefined symbol: " + toString(*config->entry));
-      return false;
-    }
+    if (config->entry)
+      if (auto *undefined = dyn_cast<Undefined>(config->entry))
+        treatUndefinedSymbol(*undefined, "the entry point");
+
     // FIXME: This prints symbols that are undefined both in input files and
     // via -u flag twice.
-    for (const Symbol *undefined : config->explicitUndefineds) {
-      if (isa<Undefined>(undefined)) {
-        error("undefined symbol: " + toString(*undefined) +
-              "\n>>> referenced by flag -u " + toString(*undefined));
-        return false;
-      }
+    for (const Symbol *sym : config->explicitUndefineds) {
+      if (const auto *undefined = dyn_cast<Undefined>(sym))
+        treatUndefinedSymbol(*undefined, "-u");
     }
     // Literal exported-symbol names must be defined, but glob
     // patterns need not match.
     for (const CachedHashStringRef &cachedName :
          config->exportedSymbols.literals) {
       if (const Symbol *sym = symtab->find(cachedName))
-        if (isa<Defined>(sym))
-          continue;
-      error("undefined symbol " + cachedName.val() +
-            "\n>>> referenced from option -exported_symbol(s_list)");
+        if (const auto *undefined = dyn_cast<Undefined>(sym))
+          treatUndefinedSymbol(*undefined, "-exported_symbol(s_list)");
     }
+
+    // FIXME: should terminate the link early based on errors encountered so
+    // far?
 
     createSyntheticSections();
     createSyntheticSymbols();
+
+    if (!config->exportedSymbols.empty()) {
+      for (Symbol *sym : symtab->getSymbols()) {
+        if (auto *defined = dyn_cast<Defined>(sym)) {
+          StringRef symbolName = defined->getName();
+          if (config->exportedSymbols.match(symbolName)) {
+            if (defined->privateExtern) {
+              error("cannot export hidden symbol " + symbolName +
+                    "\n>>> defined in " + toString(defined->getFile()));
+            }
+          } else {
+            defined->privateExtern = true;
+          }
+        }
+      }
+    } else if (!config->unexportedSymbols.empty()) {
+      for (Symbol *sym : symtab->getSymbols())
+        if (auto *defined = dyn_cast<Defined>(sym))
+          if (config->unexportedSymbols.match(defined->getName()))
+            defined->privateExtern = true;
+    }
 
     for (const Arg *arg : args.filtered(OPT_sectcreate)) {
       StringRef segName = arg->getValue(0);

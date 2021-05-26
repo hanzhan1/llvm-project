@@ -53,7 +53,7 @@
 #include <cstring>
 #include <system_error>
 
-#ifdef HAVE_LIBXAR
+#ifdef LLVM_HAVE_LIBXAR
 extern "C" {
 #include <xar/xar.h>
 }
@@ -184,7 +184,7 @@ typedef std::pair<uint64_t, DiceRef> DiceTableEntry;
 typedef std::vector<DiceTableEntry> DiceTable;
 typedef DiceTable::iterator dice_table_iterator;
 
-#ifdef HAVE_LIBXAR
+#ifdef LLVM_HAVE_LIBXAR
 namespace {
 struct ScopedXarFile {
   xar_t xar;
@@ -211,7 +211,7 @@ struct ScopedXarIter {
   operator xar_iter_t() { return iter; }
 };
 } // namespace
-#endif // defined(HAVE_LIBXAR)
+#endif // defined(LLVM_HAVE_LIBXAR)
 
 // This is used to search for a data in code table entry for the PC being
 // disassembled.  The j parameter has the PC in j.first.  A single data in code
@@ -1697,12 +1697,12 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
                              StringRef DisSegName, StringRef DisSectName);
 static void DumpProtocolSection(MachOObjectFile *O, const char *sect,
                                 uint32_t size, uint32_t addr);
-#ifdef HAVE_LIBXAR
+#ifdef LLVM_HAVE_LIBXAR
 static void DumpBitcodeSection(MachOObjectFile *O, const char *sect,
                                 uint32_t size, bool verbose,
                                 bool PrintXarHeader, bool PrintXarFileHeaders,
                                 std::string XarMemberName);
-#endif // defined(HAVE_LIBXAR)
+#endif // defined(LLVM_HAVE_LIBXAR)
 
 static void DumpSectionContents(StringRef Filename, MachOObjectFile *O,
                                 bool verbose) {
@@ -1773,13 +1773,13 @@ static void DumpSectionContents(StringRef Filename, MachOObjectFile *O,
             DumpProtocolSection(O, sect, sect_size, sect_addr);
             continue;
           }
-#ifdef HAVE_LIBXAR
+#ifdef LLVM_HAVE_LIBXAR
           if (SegName == "__LLVM" && SectName == "__bundle") {
             DumpBitcodeSection(O, sect, sect_size, verbose, SymbolicOperands,
                                ArchiveHeaders, "");
             continue;
           }
-#endif // defined(HAVE_LIBXAR)
+#endif // defined(LLVM_HAVE_LIBXAR)
           switch (section_type) {
           case MachO::S_REGULAR:
             DumpRawSectionContents(O, sect, sect_size, sect_addr);
@@ -6460,7 +6460,7 @@ static void DumpProtocolSection(MachOObjectFile *O, const char *sect,
   }
 }
 
-#ifdef HAVE_LIBXAR
+#ifdef LLVM_HAVE_LIBXAR
 static inline void swapStruct(struct xar_header &xar) {
   sys::swapByteOrder(xar.magic);
   sys::swapByteOrder(xar.size);
@@ -6823,7 +6823,7 @@ static void DumpBitcodeSection(MachOObjectFile *O, const char *sect,
     }
   }
 }
-#endif // defined(HAVE_LIBXAR)
+#endif // defined(LLVM_HAVE_LIBXAR)
 
 static void printObjcMetaData(MachOObjectFile *O, bool verbose) {
   if (O->is64Bit())
@@ -10467,7 +10467,7 @@ static const char *get_dyld_bind_info_symbolname(uint64_t ReferenceValue,
 }
 
 void objdump::printLazyBindTable(ObjectFile *o) {
-  outs() << "Lazy bind table:\n";
+  outs() << "\nLazy bind table:\n";
   if (MachOObjectFile *MachO = dyn_cast<MachOObjectFile>(o))
     printMachOLazyBindTable(MachO);
   else
@@ -10477,7 +10477,7 @@ void objdump::printLazyBindTable(ObjectFile *o) {
 }
 
 void objdump::printWeakBindTable(ObjectFile *o) {
-  outs() << "Weak bind table:\n";
+  outs() << "\nWeak bind table:\n";
   if (MachOObjectFile *MachO = dyn_cast<MachOObjectFile>(o))
     printMachOWeakBindTable(MachO);
   else
@@ -10487,7 +10487,7 @@ void objdump::printWeakBindTable(ObjectFile *o) {
 }
 
 void objdump::printExportsTrie(const ObjectFile *o) {
-  outs() << "Exports trie:\n";
+  outs() << "\nExports trie:\n";
   if (const MachOObjectFile *MachO = dyn_cast<MachOObjectFile>(o))
     printMachOExportsTrie(MachO);
   else
@@ -10497,7 +10497,7 @@ void objdump::printExportsTrie(const ObjectFile *o) {
 }
 
 void objdump::printRebaseTable(ObjectFile *o) {
-  outs() << "Rebase table:\n";
+  outs() << "\nRebase table:\n";
   if (MachOObjectFile *MachO = dyn_cast<MachOObjectFile>(o))
     printMachORebaseTable(MachO);
   else
@@ -10507,7 +10507,7 @@ void objdump::printRebaseTable(ObjectFile *o) {
 }
 
 void objdump::printBindTable(ObjectFile *o) {
-  outs() << "Bind table:\n";
+  outs() << "\nBind table:\n";
   if (MachOObjectFile *MachO = dyn_cast<MachOObjectFile>(o))
     printMachOBindTable(MachO);
   else

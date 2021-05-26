@@ -48,12 +48,6 @@ typedef struct atmi_implicit_args_s {
 extern "C" {
 #endif
 
-#define check(msg, status)                                                     \
-  if (status != HSA_STATUS_SUCCESS) {                                          \
-    printf("%s failed.\n", #msg);                                              \
-    exit(1);                                                                   \
-  }
-
 #ifdef DEBUG
 #define DEBUG_PRINT(fmt, ...)                                                  \
   if (core::Runtime::getInstance().getDebugMode()) {                           \
@@ -79,7 +73,6 @@ typedef struct atl_context_s {
   bool g_tasks_initialized;
 } atl_context_t;
 extern atl_context_t atlc;
-extern atl_context_t *atlc_p;
 
 #ifdef __cplusplus
 }
@@ -117,8 +110,6 @@ extern std::vector<std::map<std::string, atl_kernel_info_t>> KernelInfoTable;
 extern std::vector<std::map<std::string, atl_symbol_info_t>> SymbolInfoTable;
 
 // ---------------------- Kernel End -------------
-
-extern struct timespec context_init_time;
 
 namespace core {
 class TaskgroupImpl;
@@ -220,45 +211,17 @@ template <typename T> inline T *alignUp(T *value, size_t alignment) {
       alignDown((intptr_t)(value + alignment - 1), alignment));
 }
 
-extern void register_allocation(void *addr, size_t size,
-                                atmi_mem_place_t place);
+hsa_status_t register_allocation(void *addr, size_t size,
+                                 atmi_mem_place_t place);
 
 extern bool atl_is_atmi_initialized();
 
 bool handle_group_signal(hsa_signal_value_t value, void *arg);
 
-
-void allow_access_to_all_gpu_agents(void *ptr);
+hsa_status_t allow_access_to_all_gpu_agents(void *ptr);
 } // namespace core
 
 const char *get_error_string(hsa_status_t err);
 const char *get_atmi_error_string(atmi_status_t err);
-
-#define ATMIErrorCheck(msg, status)                                            \
-  if (status != ATMI_STATUS_SUCCESS) {                                         \
-    printf("[%s:%d] %s failed: %s\n", __FILE__, __LINE__, #msg,                \
-           get_atmi_error_string(status));                                     \
-    exit(1);                                                                   \
-  } else {                                                                     \
-    /*  printf("%s succeeded.\n", #msg);*/                                     \
-  }
-
-#define ErrorCheck(msg, status)                                                \
-  if (status != HSA_STATUS_SUCCESS) {                                          \
-    printf("[%s:%d] %s failed: %s\n", __FILE__, __LINE__, #msg,                \
-           get_error_string(status));                                          \
-    exit(1);                                                                   \
-  } else {                                                                     \
-    /*  printf("%s succeeded.\n", #msg);*/                                     \
-  }
-
-#define ErrorCheckAndContinue(msg, status)                                     \
-  if (status != HSA_STATUS_SUCCESS) {                                          \
-    DEBUG_PRINT("[%s:%d] %s failed: %s\n", __FILE__, __LINE__, #msg,           \
-                get_error_string(status));                                     \
-    continue;                                                                  \
-  } else {                                                                     \
-    /*  printf("%s succeeded.\n", #msg);*/                                     \
-  }
 
 #endif // SRC_RUNTIME_INCLUDE_INTERNAL_H_

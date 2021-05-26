@@ -6870,11 +6870,23 @@ def SDT_MVEMEMCPYLOOPNODE
 def MVE_MEMCPYLOOPNODE : SDNode<"ARMISD::MEMCPYLOOP", SDT_MVEMEMCPYLOOPNODE,
                                 [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
 
-let usesCustomInserter = 1, hasNoSchedulingInfo = 1 in {
+let usesCustomInserter = 1, hasNoSchedulingInfo = 1, Defs = [CPSR] in {
   def MVE_MEMCPYLOOPINST : PseudoInst<(outs),
         (ins rGPR:$dst, rGPR:$src, rGPR:$sz),
         NoItinerary,
         [(MVE_MEMCPYLOOPNODE rGPR:$dst, rGPR:$src, rGPR:$sz)]>;
+}
+
+def SDT_MVEMEMSETLOOPNODE
+    : SDTypeProfile<0, 3, [SDTCisPtrTy<0>, SDTCisVT<1, v16i8>, SDTCisVT<2, i32>]>;
+def MVE_MEMSETLOOPNODE : SDNode<"ARMISD::MEMSETLOOP", SDT_MVEMEMSETLOOPNODE,
+                                [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
+
+let usesCustomInserter = 1, hasNoSchedulingInfo = 1, Defs = [CPSR] in {
+  def MVE_MEMSETLOOPINST : PseudoInst<(outs),
+        (ins rGPR:$dst, MQPR:$src, rGPR:$sz),
+        NoItinerary,
+        [(MVE_MEMSETLOOPNODE rGPR:$dst, MQPR:$src, rGPR:$sz)]>;
 }
 
 def MVE_DLSTP_8  : MVE_DLSTP<"dlstp.8",  0b00>;
