@@ -285,8 +285,23 @@ void MemoryOpRemark::visitSizeOperand(Value *V, OptimizationRemarkMissed &R) {
   }
 }
 
+static Optional<StringRef> nameOrNone(const Value *V) {
+  if (V->hasName())
+    return V->getName();
+  return None;
+}
+
 void MemoryOpRemark::visitVariable(const Value *V,
                                    SmallVectorImpl<VariableInfo> &Result) {
+  if (auto *GV = dyn_cast<GlobalVariable>(V)) {
+    auto *Ty = cast<PointerType>(GV->getType())->getElementType();
+    uint64_t Size = DL.getTypeSizeInBits(Ty).getFixedSize();
+    VariableInfo Var{nameOrNone(GV), Size};
+    if (!Var.isEmpty())
+      Result.push_back(std::move(Var));
+    return;
+  }
+
   // If we find some information in the debug info, take that.
   bool FoundDI = false;
   // Try to get an llvm.dbg.declare, which has a DILocalVariable giving us the
@@ -312,20 +327,18 @@ void MemoryOpRemark::visitVariable(const Value *V,
     return;
 
   // If not, get it from the alloca.
-  Optional<StringRef> Name = AI->hasName() ? Optional<StringRef>(AI->getName())
-                                           : Optional<StringRef>(None);
   Optional<TypeSize> TySize = AI->getAllocationSizeInBits(DL);
   Optional<uint64_t> Size =
       TySize ? getSizeInBytes(TySize->getFixedSize()) : None;
-  VariableInfo Var{Name, Size};
+  VariableInfo Var{nameOrNone(AI), Size};
   if (!Var.isEmpty())
     Result.push_back(std::move(Var));
 }
 
 void MemoryOpRemark::visitPtr(Value *Ptr, bool IsRead, OptimizationRemarkMissed &R) {
   // Find if Ptr is a known variable we can give more information on.
-  SmallVector<const Value *, 2> Objects;
-  getUnderlyingObjects(Ptr, Objects);
+  SmallVector<Value *, 2> Objects;
+  getUnderlyingObjectsForCodeGen(Ptr, Objects);
   SmallVector<VariableInfo, 2> VIs;
   for (const Value *V : Objects)
     visitVariable(V, VIs);
@@ -339,7 +352,7 @@ void MemoryOpRemark::visitPtr(Value *Ptr, bool IsRead, OptimizationRemarkMissed 
     VIs.push_back({None, Size});
   }
 
-  R << (IsRead ? "\nRead Variables: " : "\nWritten Variables: ");
+  R << (IsRead ? "\n Read Variables: " : "\n Written Variables: ");
   for (unsigned i = 0; i < VIs.size(); ++i) {
     const VariableInfo &VI = VIs[i];
     assert(!VI.isEmpty() && "No extra content to display.");

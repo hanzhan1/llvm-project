@@ -56,7 +56,7 @@ jobs:
           DEPLOY_WS=${builds_ws}/deploy/linux_prod
           git show --name-only --oneline HEAD^2 >${DEPLOY_WS}/llvm_changes 2>&1 || true
           mkdir builds; cd builds
-          CC=aarch64-linux-gnu-gcc-7 CXX=aarch64-linux-gnu-g++-7 cmake -G Ninja -DLLVM_ENABLE_PROJECTS="clang;compiler-rt;openmp" -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="AArch64" -DLLVM_BINUTILS_INCDIR=/usr/include -DCMAKE_INSTALL_PREFIX=$DEPLOY_WS -DLLVM_TABLEGEN=${builds_ws}/build/bin/llvm-tblgen -DCLANG_TABLEGEN=${builds_ws}/build/bin/clang-tblgen -DCMAKE_CROSSCOMPILING=True -DCMAKE_SYSTEM_NAME=Linux -DLLVM_TARGET_ARCH=AArch64 -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-unknown-linux-gnu  ${MY_LLVM_ROOT}/llvm 2>&1
+          CC=aarch64-linux-gnu-gcc-7 CXX=aarch64-linux-gnu-g++-7 cmake -G Ninja -DLLVM_ENABLE_PROJECTS="clang;compiler-rt;openmp" -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="AArch64" -DLLVM_BINUTILS_INCDIR=/usr/include -DCMAKE_INSTALL_PREFIX=$DEPLOY_WS -DLLVM_TABLEGEN=${builds_ws}/build/bin/llvm-tblgen -DCLANG_TABLEGEN=${builds_ws}/build/bin/clang-tblgen -DCMAKE_CROSSCOMPILING=True -DCMAKE_SYSTEM_NAME=Linux -DLIBOMPTARGET_AMDGCN_GFXLIST="" -DLLVM_TARGET_ARCH=AArch64 -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-unknown-linux-gnu  ${MY_LLVM_ROOT}/llvm 2>&1
           ninja 2>&1
           check_rc
           ninja install

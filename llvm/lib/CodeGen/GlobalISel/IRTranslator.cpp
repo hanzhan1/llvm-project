@@ -1820,11 +1820,13 @@ bool IRTranslator::translateConstrainedFPIntrinsic(
 bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
                                            MachineIRBuilder &MIRBuilder) {
   if (auto *MI = dyn_cast<AnyMemIntrinsic>(&CI)) {
-    const Function &F = *MI->getParent()->getParent();
-    auto &TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);
-    if (MemoryOpRemark::canHandle(MI, TLI)) {
-      MemoryOpRemark R(*ORE, "memsize", *DL, TLI);
-      R.visit(MI);
+    if (ORE->enabled()) {
+      const Function &F = *MI->getParent()->getParent();
+      auto &TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);
+      if (MemoryOpRemark::canHandle(MI, TLI)) {
+        MemoryOpRemark R(*ORE, "memsize", *DL, TLI);
+        R.visit(MI);
+      }
     }
   }
 
@@ -2257,11 +2259,13 @@ bool IRTranslator::translateCallBase(const CallBase &CB,
   }
 
   if (auto *CI = dyn_cast<CallInst>(&CB)) {
-    const Function &F = *CI->getParent()->getParent();
-    auto &TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);
-    if (MemoryOpRemark::canHandle(CI, TLI)) {
-      MemoryOpRemark R(*ORE, "memsize", *DL, TLI);
-      R.visit(CI);
+    if (ORE->enabled()) {
+      const Function &F = *CI->getParent()->getParent();
+      auto &TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);
+      if (MemoryOpRemark::canHandle(CI, TLI)) {
+        MemoryOpRemark R(*ORE, "memsize", *DL, TLI);
+        R.visit(CI);
+      }
     }
   }
 
