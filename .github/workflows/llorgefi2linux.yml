@@ -6,7 +6,6 @@ on:
       - 'compiler-rt/**'
       - 'llvm/**'
       - 'openmp/**'
-      - 'flang/**'
 
 name: Build and upload llorgefi2linux compiler changeset build
 
@@ -31,7 +30,7 @@ jobs:
           mkdir build install
           git show --name-only --oneline HEAD^2 >install/llvm_changes 2>&1 || true
           cd build
-          scl enable devtoolset-7 "cmake -G 'Unix Makefiles' -DLLVM_ENABLE_PROJECTS='clang;flang;compiler-rt;openmp' -DCMAKE_INSTALL_PREFIX=../install -DLLVM_LINK_LLVM_DYLIB=ON -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD='X86' -DLLVM_BINUTILS_INCDIR=/opt/rh/devtoolset-7/root/usr/include ../llvm"
+          scl enable devtoolset-7 "cmake -G 'Unix Makefiles' -DLLVM_ENABLE_PROJECTS='clang;compiler-rt;openmp' -DCMAKE_INSTALL_PREFIX=../install -DLLVM_LINK_LLVM_DYLIB=ON -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD='X86' -DLLVM_BINUTILS_INCDIR=/opt/rh/devtoolset-7/root/usr/include ../llvm"
           scl enable devtoolset-7 "make install -j$(nproc)"
           cd ../install && rm -f sum.txt && find . -type f | xargs md5sum --binary > ../sum_Release.txt && mv ../sum_Release.txt ./sum.txt
           tar cfz ../llorgefi2linux.tar.xz *
